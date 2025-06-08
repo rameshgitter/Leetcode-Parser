@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeetCode Local Test-Case Generator (Contest Style)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f7f7f7; color: #333; display: flex; flex-direction: column; min-height: 100vh; }
+        header { background-color: #2c3e50; color: white; padding: 1.5rem 2rem; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        header h1 { margin: 0; font-size: 2rem; }
+        main { flex-grow: 1; padding: 2rem; max-width: 1200px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+        .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        textarea { width: 100%; height: 150px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 14px; box-sizing: border-box; resize: vertical; }
+        button { display: block; width: 100%; padding: 1rem; margin-top: 1rem; font-size: 1.2rem; font-weight: bold; color: white; background-color: #3498db; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        button:hover { background-color: #2980b9; }
+        #output-container { margin-top: 2rem; position: relative; }
+        pre { background-color: #2d2d2d; color: #f1f1f1; padding: 1.5rem; border-radius: 4px; overflow-x: auto; font-family: 'Courier New', Courier, monospace; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+        #copy-button { position: absolute; top: 10px; right: 10px; background-color: #7f8c8d; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background-color 0.2s; }
+        #copy-button:hover { background-color: #6c7a7b; }
+        #copy-button.copied { background-color: #27ae60; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 0.5rem; margin-top: 0; }
+        .note { background-color: #fffbe6; border-left: 4px solid #fdd835; padding: 1rem; margin-top: 1.5rem; border-radius: 4px; font-size: 0.9em; }
+        .status { font-weight: bold; }
+        .status.accepted { color: #27ae60; }
+        .status.wrong { color: #e74c3c; }
+        .status.tle { color: #f39c12; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>LeetCode Local Test-Case Generator (Contest Style)</h1>
+    </header>
+
+    <main>
+        <div class="container">
+            <h2>1. Paste LeetCode Page Source</h2>
+            <p>Go to the problem page, right-click → "View Page Source", copy everything (Ctrl+A, Ctrl+C), and paste it here.</p>
+            <textarea id="sourceCode" placeholder="Paste full HTML source code here..."></textarea>
+            <button onclick="generate()">Generate C++ Boilerplate</button>
+
+            <div id="output-container" style="display:none;">
+                <h2>2. Copy Generated Code</h2>
+                <div class="note">
+                    <strong>Note:</strong> The "Time Limit Exceeded" status is a local simulation based on a 1-second timer and may differ from LeetCode's official judgment.
+                </div>
+                <button id="copy-button" onclick="copyCode()">Copy</button>
+                <pre><code id="outputCode"></code></pre>
+            </div>
+        </div>
+    </main>
+
+<script>
+function generate() {
+    const htmlString = document.getElementById('sourceCode').value;
+    if (!htmlString) {
+        alert("Please paste the source code first.");
+        return;
+    }
+
+    try {
+        const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+        const scriptTag = doc.getElementById('__NEXT_DATA__');
+        if (!scriptTag) throw new Error("Could not find the __NEXT_DATA__ script tag.");
+
+        const jsonData = JSON.parse(scriptTag.textContent);
+        const queries = jsonData.props.pageProps.dehydratedState.queries;
+        if (!queries || !Array.isArray(queries)) throw new Error("Could not find 'queries' array.");
+
+        const questionQuery = queries.find(q => q.queryKey && q.queryKey[0] === 'questionDetail');
+        if (!questionQuery || !questionQuery.state.data.question) throw new Error("Could not find 'questionDetail' data.");
+        
+        const questionData = questionQuery.state.data.question;
+        const metaData = JSON.parse(questionData.metaData);
+        const problemTitle = questionData.questionTitle;
+        const funcName = metaData.name;
+        const returnType = mapTypeToCpp(metaData.return.type);
+        const params = metaData.params;
+
+        const examples = questionData.exampleTestcaseList;
+        const outputs = [...questionData.content.matchAll(/<strong>Output:<\/strong>.*?<span class="example-io">(.*?)<\/span>/gs)].map(m => m[1]);
+        
+        let cppCode = `// Generated by LeetCoder for: ${problemTitle}
+// Link: https://leetcode.com/problems/${questionData.titleSlug}/
+
+#include <bits/stdc++.h>
+using namespace std;
+
+// --- Helper Functions ---
+string trim(const string& str) {
+    size_t first = str.find_first_not_of(" \\t\\n\\r");
+    if (string::npos == first) return "";
+    size_t last = str.find_last_not_of(" \\t\\n\\r");
+    return str.substr(first, (last - first + 1));
+}
+
+vector<int> parseVectorInt(string input) {
+    vector<int> result;
+    input = trim(input);
+    if (input.length() < 2) return result;
+    input = input.substr(1, input.length() - 2); // Remove brackets
+    if (input.empty()) return result;
+    stringstream ss(input);
+    string item;
+    while (getline(ss, item, ',')) {
+        result.push_back(stoi(trim(item)));
+    }
+    return result;
+}
+
+template<typename T>
+void printVector(const vector<T>& vec) {
+    cout << "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        cout << vec[i] << (i == vec.size() - 1 ? "" : ", ");
+    }
+    cout << "]";
+}
+// --- End Helper Functions ---
+
+`;
+
+        if (returnType.includes('ListNode') || params.some(p => p.type.includes('ListNode'))) {
+            cppCode += `
+struct ListNode {
+    int val;
+    ListNode *next;
+    ListNode() : val(0), next(nullptr) {}
+    ListNode(int x) : val(x), next(nullptr) {}
+    ListNode(int x, ListNode *next) : val(x), next(next) {}
+};
+`;
+        }
+        
+        let paramList = params.map(p => {
+            const cppType = mapTypeToCpp(p.type);
+            if (cppType.startsWith("vector") || cppType.startsWith("string")) {
+                return `const ${cppType}& ${p.name}`;
+            }
+            return `${cppType} ${p.name}`;
+        }).join(", ");
+        
+        cppCode += `
+class Solution {
+public:
+    ${returnType} ${funcName}(${paramList}) {
+        // Your code here
+        
+        return ${getDefaultForType(returnType)};
+    }
+};
+
+// --- Main Function for Local Testing ---
+int main() {
+    Solution sol;
+    const int TIME_LIMIT_MS = 1000; // 1 second
+`;
+        examples.forEach((example, i) => {
+            const inputs = example.split('\n');
+            const expectedOutput = outputs[i] ? outputs[i].trim() : "null";
+            
+            cppCode += `
+    // --- Test Case ${i + 1} ---
+    {
+        cout << "\\n--- Test Case ${i + 1} ---" << endl;
+`;
+            
+            let callParams = [];
+            let inputVarsSetup = "";
+            inputs.forEach((inputLine, j) => {
+                const param = params[j];
+                const paramType = mapTypeToCpp(param.type);
+                const varName = `${param.name}${i+1}`;
+                callParams.push(varName);
+
+                const cleanInputLine = inputLine.replace(/\r/g, '');
+                
+                if (paramType.startsWith('vector<int>')) {
+                    inputVarsSetup += `        string ${varName}_str = R"(${cleanInputLine})";\n`;
+                    inputVarsSetup += `        ${paramType} ${varName} = parseVectorInt(${varName}_str);\n`;
+                } else if (paramType === 'int' || paramType === 'long long') {
+                    inputVarsSetup += `        ${paramType} ${varName} = ${cleanInputLine};\n`;
+                } else if (paramType === 'string') {
+                    inputVarsSetup += `        ${paramType} ${varName} = ${JSON.stringify(cleanInputLine)};\n`;
+                }
+            });
+            cppCode += inputVarsSetup;
+
+            const expectedVarName = `expected${i + 1}`;
+            if (returnType.startsWith('vector')) {
+                 cppCode += `        ${returnType} ${expectedVarName} = parseVectorInt(R"(${expectedOutput})");\n`;
+            } else if (returnType === 'int' || returnType === 'long long') {
+                 cppCode += `        ${returnType} ${expectedVarName} = ${expectedOutput};\n`;
+            } else {
+                 cppCode += `        ${returnType} ${expectedVarName} = ${JSON.stringify(expectedOutput)};\n`;
+            }
+
+            cppCode += `
+        auto start_time = chrono::high_resolution_clock::now();
+        ${returnType} result = sol.${funcName}(${callParams.join(', ')});
+        auto end_time = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+
+        cout << "Execution time: " << duration.count() << " ms" << endl;
+
+        if (duration.count() > TIME_LIMIT_MS) {
+            cout << "Status: Time Limit Exceeded" << endl;
+        } else if (result == ${expectedVarName}) {
+            cout << "Status: Accepted" << endl;
+        } else {
+            cout << "Status: Wrong Answer" << endl;
+            cout << "Output:   ";
+`;
+            if (returnType.startsWith('vector')) {
+                cppCode += `printVector(result);\n`;
+            } else {
+                cppCode += `cout << result;\n`;
+            }
+            cppCode += `            cout << endl;
+            cout << "Expected: ";
+`;
+            if (returnType.startsWith('vector')) {
+                cppCode += `printVector(${expectedVarName});\n`;
+            } else {
+                cppCode += `cout << ${expectedVarName};\n`;
+            }
+            cppCode += `            cout << endl;
+        }
+    }
+`;
+        });
+
+        cppCode += `
+    return 0;
+}
+`;
+        document.getElementById('outputCode').textContent = cppCode;
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('sourceCode').value = '';
+
+    } catch (e) {
+        alert("An error occurred: " + e.message + "\n\nThis can happen if LeetCode changes its page structure.");
+        console.error(e);
+    }
+}
+
+function mapTypeToCpp(type) {
+    const typeMap = {
+        'integer': 'int', 'long': 'long long', 'double': 'double', 'boolean': 'bool',
+        'string': 'string', 'character': 'char', 'integer[]': 'vector<int>',
+        'string[]': 'vector<string>', 'integer[][]': 'vector<vector<int>>',
+        'ListNode': 'ListNode*', 'TreeNode': 'TreeNode*'
+    };
+    return typeMap[type] || type;
+}
+
+function getDefaultForType(cppType) {
+    if (cppType.endsWith('*')) return 'nullptr';
+    if (cppType.startsWith('vector')) return '{}';
+    if (cppType === 'int' || cppType === 'long long') return '0';
+    if (cppType === 'double') return '0.0';
+    if (cppType === 'bool') return 'false';
+    if (cppType === 'string') return '""';
+    return '{}';
+}
+
+function copyCode() {
+    const code = document.getElementById('outputCode').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copy-button');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    }, (err) => {
+        alert('Failed to copy text: ', err);
+    });
+}
+</script>
+
+</body>
+</html>
