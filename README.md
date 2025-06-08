@@ -120,3 +120,8 @@ int main() {
 
     return 0;
 }
+```
+## Credits
+Made it with the help of Google AI Studio
+
+Idea Inspiration from Siddharth from BIT-Meshra
